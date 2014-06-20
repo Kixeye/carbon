@@ -18,6 +18,7 @@ class CarbonClientProtocol(Int32StringReceiver):
     self.paused = False
     self.connected = True
     self.transport.registerProducer(self, streaming=True)
+    self.delayedSend = None
     # Define internal metric names
     self.destinationName = self.factory.destinationName
     self.queuedUntilReady = 'destinations.%s.queuedUntilReady' % self.destinationName
@@ -77,6 +78,11 @@ class CarbonClientProtocol(Int32StringReceiver):
     of 10ms per send, so the queue should drain with an order of
     minutes, which seems more realistic.
     """
+    if self.delayedSend is not None:
+      if self.delayedSend.active():
+        self.delayedSend.cancel()
+      self.delayedSend = None
+
     chained_invocation_delay = 0.0001
     queueSize = self.factory.queueSize
 
@@ -92,7 +98,10 @@ class CarbonClientProtocol(Int32StringReceiver):
         queueSize < SEND_QUEUE_LOW_WATERMARK):
       self.factory.queueHasSpace.callback(queueSize)
     if self.factory.hasQueuedDatapoints():
-      reactor.callLater(chained_invocation_delay, self.sendQueued)
+      if self.factory.queueSize >= settings.MAX_DATAPOINTS_PER_MESSAGE:
+        self.delayedSend = reactor.callLater(chained_invocation_delay, self.sendQueued)
+      else:
+        self.delayedSend = reactor.callLater(settings.TIME_TO_DEFER_SENDING, self.sendQueued)
 
   def __str__(self):
     return 'CarbonClientProtocol(%s:%d:%s)' % (self.factory.destination)
@@ -196,7 +205,10 @@ class CarbonClientFactory(ReconnectingClientFactory):
       self.enqueue(metric, datapoint)
 
     if self.connectedProtocol:
-      reactor.callLater(settings.TIME_TO_DEFER_SENDING, self.connectedProtocol.sendQueued)
+      if self.queueSize >= settings.MAX_DATAPOINTS_PER_MESSAGE:
+        self.connectedProtocol.sendQueued()
+      elif self.connectedProtocol.delayedSend is None:
+        self.connectedProtocol.delayedSend = reactor.callLater(settings.TIME_TO_DEFER_SENDING, self.connectedProtocol.sendQueued)
     else:
       instrumentation.increment(self.queuedUntilConnected)
 
