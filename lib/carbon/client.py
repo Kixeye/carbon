@@ -56,7 +56,7 @@ class CarbonClientProtocol(Int32StringReceiver):
       instrumentation.increment(self.batchesSent)
       self.factory.checkQueue()
 
-  def sendQueued(self):
+  def sendQueued(self, flush = False):
     """This should be the only method that will be used to send stats.
     In order to not hold the event loop and prevent stats from flowing
     in while we send them out, this will process
@@ -94,6 +94,11 @@ class CarbonClientProtocol(Int32StringReceiver):
       return
     
     self._sendDatapoints(self.factory.takeSomeFromQueue())
+
+    while flush and self.factory.hasQueuedDatapoints():
+      sleep(chained_invocation_delay)
+      self._sendDatapoints(self.factory.takeSomeFromQueue())
+
     if (self.factory.queueFull.called and
         queueSize < SEND_QUEUE_LOW_WATERMARK):
       self.factory.queueHasSpace.callback(queueSize)
@@ -229,6 +234,9 @@ class CarbonClientFactory(ReconnectingClientFactory):
     self.connectFailed = Deferred()
 
   def disconnect(self):
+    # Flush queue so connection closes cleanly
+    self.connectedProtocol.sendQueued(True)
+
     self.queueEmpty.addCallback(lambda result: self.stopConnecting())
     readyToStop = DeferredList(
       [self.connectionLost, self.connectFailed],
