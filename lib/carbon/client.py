@@ -49,10 +49,6 @@ class CarbonClientProtocol(Int32StringReceiver):
       self.transport.loseConnection()
       self.connected = False
 
-  def sendDatapoint(self, metric, datapoint):
-    self.factory.enqueue(metric, datapoint)
-    reactor.callLater(settings.TIME_TO_DEFER_SENDING, self.sendQueued)
-
   def _sendDatapoints(self, datapoints):
       self.sendString(pickle.dumps(datapoints, protocol=-1))
       instrumentation.increment(self.sent, len(datapoints))
