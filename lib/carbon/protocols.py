@@ -23,8 +23,9 @@ class MetricReceiver:
       self.pauseReceiving()
 
     state.connectedMetricReceiverProtocols.add(self)
-    events.pauseReceivingMetrics.addHandler(self.pauseReceiving)
-    events.resumeReceivingMetrics.addHandler(self.resumeReceiving)
+    if settings.USE_FLOW_CONTROL:
+      events.pauseReceivingMetrics.addHandler(self.pauseReceiving)
+      events.resumeReceivingMetrics.addHandler(self.resumeReceiving)
 
   def getPeerName(self):
     if hasattr(self.transport, 'getPeer'):
@@ -48,8 +49,9 @@ class MetricReceiver:
       log.listener("%s connection with %s lost: %s" % (self.__class__.__name__, self.peerName, reason.value))
 
     state.connectedMetricReceiverProtocols.remove(self)
-    events.pauseReceivingMetrics.removeHandler(self.pauseReceiving)
-    events.resumeReceivingMetrics.removeHandler(self.resumeReceiving)
+    if settings.USE_FLOW_CONTROL:
+      events.pauseReceivingMetrics.removeHandler(self.pauseReceiving)
+      events.resumeReceivingMetrics.removeHandler(self.resumeReceiving)
 
   def metricReceived(self, metric, datapoint):
     if BlackList and metric in BlackList:
@@ -74,7 +76,7 @@ class MetricLineReceiver(MetricReceiver, LineOnlyReceiver):
       metric, value, timestamp = line.strip().split()
       datapoint = ( float(timestamp), float(value) )
     except Exception:
-      log.listener('invalid line received from client %s, ignoring' % self.peerName)
+      log.listener('invalid line (%s) received from client %s, ignoring' % (line, self.peerName))
       return
 
     self.metricReceived(metric, datapoint)
@@ -89,7 +91,7 @@ class MetricDatagramReceiver(MetricReceiver, DatagramProtocol):
 
         self.metricReceived(metric, datapoint)
       except Exception:
-        log.listener('invalid line received from %s, ignoring' % host)
+        log.listener('invalid line (%s) received from %s, ignoring' % (line, host))
 
 
 class MetricPickleReceiver(MetricReceiver, Int32StringReceiver):

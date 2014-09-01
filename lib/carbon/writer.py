@@ -72,7 +72,7 @@ def optimalWriteOrder():
           MetricCache.pop(metric)
         except KeyError:
           pass
-
+        instrumentation.increment('droppedCreates')
         continue
 
     try:  # metrics can momentarily disappear from the MetricCache due to the implementation of MetricCache.store()
@@ -122,8 +122,12 @@ def writeCachedDataPoints():
             log.err("%s" % e)
         log.creates("creating database file %s (archive=%s xff=%s agg=%s)" %
                     (dbFilePath, archiveConfig, xFilesFactor, aggregationMethod))
-        whisper.create(dbFilePath, archiveConfig, xFilesFactor, aggregationMethod, settings.WHISPER_SPARSE_CREATE, settings.WHISPER_FALLOCATE_CREATE)
-        instrumentation.increment('creates')
+        try:
+          whisper.create(dbFilePath, archiveConfig, xFilesFactor, aggregationMethod, settings.WHISPER_SPARSE_CREATE, settings.WHISPER_FALLOCATE_CREATE)
+          instrumentation.increment('creates')
+        except Exception, e:
+          log.err("Error creating %s: %s" % (dbFilePath,e))
+          continue
 
       try:
         t1 = time.time()

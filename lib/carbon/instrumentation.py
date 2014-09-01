@@ -83,6 +83,7 @@ def recordMetrics():
     updateTimes = myStats.get('updateTimes', [])
     committedPoints = myStats.get('committedPoints', 0)
     creates = myStats.get('creates', 0)
+    droppedCreates = myStats.get('droppedCreates', 0)
     errors = myStats.get('errors', 0)
     cacheQueries = myStats.get('cacheQueries', 0)
     cacheBulkQueries = myStats.get('cacheBulkQueries', 0)
@@ -104,6 +105,7 @@ def recordMetrics():
     record('updateOperations', len(updateTimes))
     record('committedPoints', committedPoints)
     record('creates', creates)
+    record('droppedCreates', droppedCreates)
     record('errors', errors)
     record('cache.queries', cacheQueries)
     record('cache.bulk_queries', cacheBulkQueries)
@@ -134,6 +136,8 @@ def recordMetrics():
 
   # common metrics
   record('metricsReceived', myStats.get('metricsReceived', 0))
+  record('blacklistMatches', myStats.get('blacklistMatches', 0))
+  record('whitelistRejects', myStats.get('whitelistRejects', 0))
   record('cpuUsage', getCpuUsage())
 
   # And here preserve count of messages received in the prior periiod
