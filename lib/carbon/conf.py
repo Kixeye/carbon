@@ -254,7 +254,7 @@ class CarbonCacheOptions(usage.Options):
             elif not self.parent["nodaemon"]:
                 logdir = settings.LOG_DIR
                 if not isdir(logdir):
-                    os.mkdir(logdir)
+                    os.makedirs(logdir)
                     if settings.USER:
                         # We have not yet switched to the specified user,
                         # but that user must be able to create files in this
@@ -408,6 +408,9 @@ def get_default_parser(usage="%prog [options] <start|stop|status>"):
     parser.add_option(
         "--debug", action="store_true",
         help="Run in the foreground, log to stdout")
+    parser.add_option(
+        "--nodaemon", action="store_true",
+        help="Run in the foreground")
     parser.add_option(
         "--profile",
         help="Record performance profile data to the given file")
