@@ -1,0 +1,204 @@
+#! /bin/bash
+### BEGIN INIT INFO
+# Provides:          carbon-relay
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: carbon-relay init script
+# Description:       An init script for Graphite's carbon-relay daemon.
+### END INIT INFO
+
+# Author: Jeremy Chalmer
+#
+# This init script was written for Ubuntu 11.10 using start-stop-daemon.
+# 
+# Enable with update-rc.d carbon-relay defaults
+
+# Author: Dave Ertel
+#
+# Almost entirely re-written to support multiple instances, etc.
+
+# Source init-functions:
+. /lib/lsb/init-functions
+
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Path to Graphite
+GRAPHITE_HOME=/opt/graphite
+
+# User to run daemon as
+USER=www-data
+
+# Name of executable daemon
+if [ -L "$0" ]; then
+	NAME="$(basename $(readlink -f $0))"
+else
+	NAME="$(basename $0)"
+fi
+DESC="${NAME} daemon"
+CARBON_DAEMON="${NAME#carbon-}"
+INSTANCES=""
+
+# Check options
+ARGS=$(getopt -o "i:" -l "instance:" -n "${NAME}" -- "$@")
+if [ $? -ne 0 ]; then
+	exit 1
+fi
+eval set -- "${ARGS}"
+while true; do
+	case "$1" in
+		-i|--instance)
+			shift
+			INSTANCES="${INSTANCES}$1 "
+			shift
+			;;
+		--)
+			shift
+			break
+			;;
+	esac
+done
+
+# Path to Executable
+DAEMON=${GRAPHITE_HOME}/bin/${NAME}.py
+
+# Find configured instances
+ALLINSTANCES=`grep "^\[${CARBON_DAEMON}" ${GRAPHITE_HOME}/conf/carbon.conf | sed -r 's/^[^:]*$/[:a]/;s/^\[[^:]*:([^]]*)\]$/\1/'`
+
+# Check or set instances to be acted on
+if [ -z "${INSTANCES}" ]; then
+	# Act on all instances if none specified
+	INSTANCES="${ALLINSTANCES}"
+else
+	# Check specified instances are configured
+	for INSTANCE in $INSTANCES; do
+		if [ $(expr match "${ALLINSTANCES}" ".*\<${INSTANCE}\>") = 0 ]; then
+			echo "Instance ${INSTANCE} is not configured" >&2
+			exit 1
+		fi
+	done
+fi
+
+SCRIPTNAME=/etc/init.d/${NAME}
+
+# Exit if the package is not installed
+if [ ! -x "${DAEMON}" ]; then
+	echo "Couldn't find ${DAEMON} or not executable"
+	exit 99
+fi
+
+#
+# Function that starts the daemon/service
+#
+do_start() {
+	# Return
+	#   0 if daemon has been started
+	#   1 if daemon was already running
+	#   2 if daemon could not be started
+
+	RETVAL=0
+
+	for INSTANCE in ${INSTANCES}; do
+		PIDFILE=/opt/graphite/storage/${NAME}-${INSTANCE}.pid
+
+		log_daemon_msg "Starting ${DESC}" "${NAME}:${INSTANCE}"
+
+		# Start the daemon, return >=2 if failed
+		start-stop-daemon --start --pidfile ${PIDFILE} --chuid ${USER:-`whoami`} --startas ${DAEMON} -- --instance=${INSTANCE} start >/dev/null
+		IRETVAL="$?"
+
+		case "${IRETVAL}" in
+			0) log_end_msg 0 ;;
+			1) echo -n "   ...already started"; log_end_msg 0 ;;
+			*) log_end_msg 1 ;;
+		esac
+
+		[ ${IRETVAL} -gt ${RETVAL} ] && RETVAL=${IRETVAL}
+	done
+
+	return ${RETVAL}
+}
+
+#
+# Function that stops the daemon/service
+#
+do_stop() {
+	# Return
+	#   0 if daemon has been stopped
+	#   1 if daemon was already stopped
+	#   2 if daemon could not be stopped
+	#   other if a failure occurred
+
+	RETVAL=0
+
+	for INSTANCE in ${INSTANCES}; do
+		PIDFILE=/opt/graphite/storage/${NAME}-${INSTANCE}.pid
+
+		log_daemon_msg "Stopping ${DESC}" "${NAME}:${INSTANCE}"
+		start-stop-daemon --stop --signal 2 --retry 60 --quiet --pidfile ${PIDFILE}
+		IRETVAL="$?"
+
+		# Delete the exisitng PID file
+		if [ ${IRETVAL} -lt 2 -a -e "${PIDFILE}" ]; then
+			rm "${PIDFILE}"
+		fi
+
+		case "${IRETVAL}" in
+			0) log_end_msg 0 ;;
+			1) echo -n "   ...already stopped"; log_end_msg 0 ;;
+			*) log_end_msg 1 ;;
+		esac
+
+		[ ${IRETVAL} -gt ${RETVAL} ] && RETVAL=${IRETVAL}
+	done
+
+	return ${RETVAL}
+}
+
+#
+# Function that checks the status of the daemon/service
+#
+do_status() {
+	# Return
+	#   0 if daemon is running
+	#   1 if daemon is stopped
+
+	RETVAL=0
+
+	for INSTANCE in ${INSTANCES}; do
+		${DAEMON} --instance=${INSTANCE} status
+		if [ "$?" = "0" ]; then
+			IRETVAL=0
+		else
+			IRETVAL=1
+		fi
+
+		[ ${IRETVAL} -gt ${RETVAL} ] && RETVAL=${IRETVAL}
+	done
+
+	return ${RETVAL}
+}
+
+
+# Display / Parse Init Options
+case "$1" in
+	start)
+		do_start
+		;;
+	stop)
+		do_stop
+		;;
+	restart)
+		do_stop
+		do_start
+		;;
+	status)
+		do_status
+		;;
+	*)
+		echo "Usage: $SCRIPTNAME {start|stop|restart|status}" >&2
+		exit 3
+		;;
+esac
